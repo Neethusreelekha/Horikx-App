@@ -1,14 +1,3 @@
-"""
-Horikx Plot Analysis for Rubber Devulcanization
-A clean, streamlined Streamlit web app using pandas and matplotlib.
-
-Requirements:
-    pip install streamlit pandas matplotlib openpyxl numpy
-
-Run:
-    streamlit run app.py
-"""
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -39,7 +28,7 @@ s0 = st.sidebar.number_input(
     "Initial Sol Fraction ($s_0$ or $s_i$)",
     min_value=0.0001,
     max_value=0.3000,
-    value=0.010,
+    value=${defaultS0.toFixed(3)},
     step=0.005,
     format="%.4f",
     help="Sol fraction of the original rubber vulcanizate prior to devulcanization (typically 0.01 - 0.05)."
@@ -69,16 +58,18 @@ def calculate_horikx_curves(s0_val, n_points=300):
     Computes theoretical Horikx curve coordinates (Horikx, 1956).
     
     1. Main-Chain Scission:
-       1 - (v_f / v_i) = 1 - [ (1 - sqrt(S_f))^2 / (1 - sqrt(S_i))^2 ]
-       or s(x) = [1 - (1 - sqrt(s0)) * sqrt(1 - x)]^2
+       1 - (v_f / v_i) = 1 - [ (1 - np.sqrt(S_f))**2 / (1 - np.sqrt(S_i))**2 ]
+       Inverted: S_f(x) = (1.0 - (1.0 - np.sqrt(s0_val)) * np.sqrt(1.0 - x)) ** 2
        
     2. Crosslink Scission:
-       1 - (v_f / v_i) = 1 - [ (gamma_f * (1 - sqrt(S_f))^2) / (gamma_i * (1 - sqrt(S_i))^2) ]
-       where gamma(s) = 1 / (s + sqrt(s)), giving:
-       gamma_f / gamma_i = (S_i + sqrt(S_i)) / (S_f + sqrt(S_f))
+       1 - (v_f / v_i) = 1 - [ (gamma_f * (1 - np.sqrt(S_f))**2) / (gamma_i * (1 - np.sqrt(S_i))**2) ]
+       where gamma(S) = 1.0 / (S + np.sqrt(S))
+       giving: gamma_f / gamma_i = (s0_val + np.sqrt(s0_val)) / (s_crosslink + np.sqrt(s_crosslink))
     """
+    s0_val = float(max(0.0001, min(0.3, s0_val)))
+    
     # 1. Main-chain scission curve (analytical s as function of x from 0 to 1)
-    x_mainchain = np.linspace(0, 1, n_points)
+    x_mainchain = np.linspace(0.0, 1.0, n_points)
     term = (1.0 - np.sqrt(s0_val)) * np.sqrt(np.maximum(0.0, 1.0 - x_mainchain))
     s_mainchain = (1.0 - term) ** 2
     s_mainchain = np.clip(s_mainchain, 0.0, 1.0)
@@ -87,12 +78,22 @@ def calculate_horikx_curves(s0_val, n_points=300):
     s_crosslink = np.linspace(s0_val, 1.0, n_points)
     denom = (1.0 - np.sqrt(s0_val)) ** 2
     numerator = (1.0 - np.sqrt(s_crosslink)) ** 2
-    # gamma_f / gamma_i = (s0 + sqrt(s0)) / (s + sqrt(s))
+    # gamma_f / gamma_i = (s0 + np.sqrt(s0)) / (s + np.sqrt(s))
     gamma_ratio = (s0_val + np.sqrt(s0_val)) / (s_crosslink + np.sqrt(s_crosslink))
     ratio = gamma_ratio * (numerator / denom)
     x_crosslink = np.clip(1.0 - ratio, 0.0, 1.0)
     
     return x_crosslink, s_crosslink, x_mainchain, s_mainchain
+
+# ---------------------------------------------------------
+# Theoretical Equations Display
+# ---------------------------------------------------------
+with st.sidebar.expander("📖 Theoretical Equations", expanded=False):
+    st.markdown("**1. Main-Chain Degradation:**")
+    st.latex(r"1 - \\frac{\\nu_f}{\\nu_i} = 1 - \\frac{\\left(1 - \\sqrt{S_f}\\right)^2}{\\left(1 - \\sqrt{S_i}\\right)^2}")
+    st.markdown("**2. Crosslink Cleavage:**")
+    st.latex(r"1 - \\frac{\\nu_f}{\\nu_i} = 1 - \\frac{\\gamma_f \\left(1 - \\sqrt{S_f}\\right)^2}{\\gamma_i \\left(1 - \\sqrt{S_i}\\right)^2}")
+    st.latex(r"\\frac{\\gamma_f}{\\gamma_i} = \\frac{S_i + \\sqrt{S_i}}{S_f + \\sqrt{S_f}}")
 
 # ---------------------------------------------------------
 # File Upload & Data Processing
@@ -241,9 +242,7 @@ if df is not None:
     # Axes limits, labels, and styling
     ax.set_xlim(0.0, 1.0)
     ax.set_ylim(0.0, 1.0)
-    ax.set_xlabel(r"Relative Decrease in Crosslink Density ($1 - 
-u / 
-u_0$)", fontsize=11, fontweight='semibold')
+    ax.set_xlabel(r"Relative Decrease in Crosslink Density ($1 - \nu / \nu_0$)", fontsize=11, fontweight='semibold')
     ax.set_ylabel(r"Sol Fraction ($s$)", fontsize=11, fontweight='semibold')
     ax.set_title("Horikx Plot for Rubber Devulcanization", fontsize=13, fontweight='bold', pad=12)
 
@@ -273,3 +272,4 @@ u_0$)", fontsize=11, fontweight='semibold')
     # ---------------------------------------------------------
     with st.expander("View Uploaded Data Table", expanded=False):
         st.dataframe(clean_df, use_container_width=True)
+`;
