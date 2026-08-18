@@ -1,9 +1,11 @@
 """
 Horikx Plot Analysis for Rubber Devulcanization
 A complete Streamlit web application with:
-  - Dual data intake (Interactive in-app spreadsheet editor + Excel/CSV upload)
+  - Dual Dataset Input via Radio Selection:
+      Option 1: Upload Excel/CSV File (with st.file_uploader & column mapping)
+      Option 2: Manual Data Entry (Interactive spreadsheet with st.data_editor)
   - Full mathematical Horikx theoretical curve engine (1956)
-  - High-resolution Matplotlib visualization
+  - High-resolution Matplotlib visualization with customizable styling
   - Automated quantitative mechanism classification & distance analysis
   - Dynamic automated insights and optimization takeaways
 
@@ -33,7 +35,7 @@ st.set_page_config(
 st.title("🧪 Horikx Plot Analysis for Rubber Devulcanization")
 st.markdown(
     """
-    Evaluate devulcanization efficiency by comparing experimental sol fraction ($S_f$) 
+    Evaluate devulcanization efficiency by comparing experimental sol fraction ($S_f$ or $s$) 
     and crosslink density decrease ($1 - \\nu_f/\\nu_i$) against theoretical **Horikx (1956)** scission curves.
     """
 )
@@ -123,14 +125,33 @@ def evaluate_data_points(df_points, s0_val, scale_factor=1.0):
     
     for idx, row in df_points.iterrows():
         sample_name = str(row.get("Sample Name", f"Sample {idx+1}"))
+        
+        # Extract Crosslink Density Decrease
+        raw_x = None
+        for col_name in ["Crosslink Density Decrease (1 - v/v0)", "Crosslink Decrease (1 - v/v0)", "1 - v/v0", "Crosslink Density Decrease"]:
+            if col_name in row and pd.notna(row[col_name]):
+                raw_x = row[col_name]
+                break
+        if raw_x is None:
+            raw_x = row.iloc[1] if len(row) > 1 else 0.0
+
+        # Extract Sol Fraction
+        raw_s = None
+        for col_name in ["Sol Fraction (s)", "Sol Fraction (Sf)", "Sol Fraction", "s", "Sf"]:
+            if col_name in row and pd.notna(row[col_name]):
+                raw_s = row[col_name]
+                break
+        if raw_s is None:
+            raw_s = row.iloc[2] if len(row) > 2 else 0.0
+
         try:
-            raw_x = float(str(row.get("Crosslink Decrease (1 - v/v0)", 0.0)).replace("%", "").strip())
-            raw_s = float(str(row.get("Sol Fraction (Sf)", 0.0)).replace("%", "").strip())
+            val_x = float(str(raw_x).replace("%", "").strip())
+            val_s = float(str(raw_s).replace("%", "").strip())
         except (ValueError, TypeError):
             continue
             
-        x_val = raw_x / scale_factor
-        s_val = raw_s / scale_factor
+        x_val = val_x / scale_factor
+        s_val = val_s / scale_factor
         
         x_val = float(np.clip(x_val, 0.0, 1.0))
         s_val = float(np.clip(s_val, s0_val, 1.0))
@@ -175,7 +196,7 @@ def evaluate_data_points(df_points, s0_val, scale_factor=1.0):
         results.append({
             "Sample Name": sample_name,
             "1 - v/v0": x_val,
-            "Sol Fraction (Sf)": s_val,
+            "Sol Fraction (s)": s_val,
             "Theoretical X (Crosslink)": x_cl_th,
             "Theoretical X (Main-Chain)": x_mc_th,
             "Dist to Crosslink": dist_cl,
@@ -190,75 +211,50 @@ def evaluate_data_points(df_points, s0_val, scale_factor=1.0):
     return pd.DataFrame(results)
 
 # ---------------------------------------------------------
-# 4. Interactive Data Management (Manual Editor + File Upload)
+# 4. Dataset Input Options (Radio: Upload vs Manual Entry)
 # ---------------------------------------------------------
-st.subheader("📋 Experimental Data Input & Management")
+st.subheader("📋 Dataset Input")
 
-# Initialize default dataset in session state if not already set
-if "experimental_data" not in st.session_state:
-    st.session_state["experimental_data"] = pd.DataFrame([
-        {"Sample Name": "Trial 1 (180°C / 5 min)", "Crosslink Decrease (1 - v/v0)": 0.35, "Sol Fraction (Sf)": 0.06, "Notes": "Mild thermal devulcanization"},
-        {"Sample Name": "Trial 2 (200°C / 5 min)", "Crosslink Decrease (1 - v/v0)": 0.58, "Sol Fraction (Sf)": 0.12, "Notes": "Optimal balance"},
-        {"Sample Name": "Trial 3 (220°C / 5 min)", "Crosslink Decrease (1 - v/v0)": 0.74, "Sol Fraction (Sf)": 0.22, "Notes": "Selective crosslink cleavage"},
-        {"Sample Name": "Trial 4 (240°C / 5 min)", "Crosslink Decrease (1 - v/v0)": 0.88, "Sol Fraction (Sf)": 0.42, "Notes": "Onset of chain scission"},
-        {"Sample Name": "Trial 5 (260°C / 5 min)", "Crosslink Decrease (1 - v/v0)": 0.95, "Sol Fraction (Sf)": 0.68, "Notes": "Severe thermal degradation"},
+# Initialize default experimental dataset in session state
+if "manual_data" not in st.session_state:
+    st.session_state["manual_data"] = pd.DataFrame([
+        {"Sample Name": "Trial 1 (180°C / 5 min)", "Crosslink Density Decrease (1 - v/v0)": 0.35, "Sol Fraction (s)": 0.06, "Notes": "Mild thermal devulcanization"},
+        {"Sample Name": "Trial 2 (200°C / 5 min)", "Crosslink Density Decrease (1 - v/v0)": 0.58, "Sol Fraction (s)": 0.12, "Notes": "Optimal balance"},
+        {"Sample Name": "Trial 3 (220°C / 5 min)", "Crosslink Density Decrease (1 - v/v0)": 0.74, "Sol Fraction (s)": 0.22, "Notes": "Selective crosslink cleavage"},
+        {"Sample Name": "Trial 4 (240°C / 5 min)", "Crosslink Density Decrease (1 - v/v0)": 0.88, "Sol Fraction (s)": 0.42, "Notes": "Onset of chain scission"},
+        {"Sample Name": "Trial 5 (260°C / 5 min)", "Crosslink Density Decrease (1 - v/v0)": 0.95, "Sol Fraction (s)": 0.68, "Notes": "Severe thermal degradation"},
     ])
 
-tab_editor, tab_upload = st.tabs(["📝 Interactive Data Table Editor", "📁 Upload Excel / CSV File"])
+# Radio button to select dataset input method
+input_option = st.radio(
+    "Choose Dataset Input Option:",
+    options=["Option 1: Upload Excel/CSV File", "Option 2: Manual Data Entry"],
+    index=1,
+    horizontal=True,
+    help="Select Option 1 to upload an existing spreadsheet, or Option 2 to type/edit data points directly in the interactive table."
+)
 
-with tab_editor:
-    st.markdown(
-        "Directly **add**, **edit**, or **delete** experimental data rows in the live table below. "
-        "The plot and automated mechanism insights update automatically."
-    )
-    
-    edited_df = st.data_editor(
-        st.session_state["experimental_data"],
-        num_rows="dynamic",
-        use_container_width=True,
-        column_config={
-            "Sample Name": st.column_config.TextColumn("Sample / Trial Name", required=True),
-            "Crosslink Decrease (1 - v/v0)": st.column_config.NumberColumn(
-                "Crosslink Decrease (1 - ν/ν₀)",
-                min_value=0.0,
-                max_value=1.0 if "Fraction" in unit_format else 100.0,
-                step=0.01 if "Fraction" in unit_format else 1.0,
-                format="%.4f" if "Fraction" in unit_format else "%.1f%%",
-                required=True
-            ),
-            "Sol Fraction (Sf)": st.column_config.NumberColumn(
-                "Sol Fraction (S_f)",
-                min_value=0.0,
-                max_value=1.0 if "Fraction" in unit_format else 100.0,
-                step=0.01 if "Fraction" in unit_format else 1.0,
-                format="%.4f" if "Fraction" in unit_format else "%.1f%%",
-                required=True
-            ),
-            "Notes": st.column_config.TextColumn("Notes / Condition (Optional)")
-        },
-        key="data_editor_table"
-    )
-    st.session_state["experimental_data"] = edited_df
+current_active_df = None
 
-with tab_upload:
+if input_option == "Option 1: Upload Excel/CSV File":
     col_up1, col_up2 = st.columns([3, 1])
     with col_up1:
         uploaded_file = st.file_uploader(
             "Upload Spreadsheet File (.xlsx, .xls, .csv)",
             type=["csv", "xlsx", "xls"],
-            help="Upload a file containing columns for sample name, crosslink decrease, and sol fraction."
+            help="Upload an Excel or CSV file containing Crosslink Density Decrease and Sol Fraction columns."
         )
     with col_up2:
         st.write("")
         st.write("")
-        sample_csv = st.session_state["experimental_data"].to_csv(index=False).encode('utf-8')
+        sample_csv = st.session_state["manual_data"].to_csv(index=False).encode('utf-8')
         st.download_button(
             "📥 Download CSV Template",
             data=sample_csv,
             file_name="horikx_data_template.csv",
             mime="text/csv"
         )
-        
+
     if uploaded_file is not None:
         try:
             if uploaded_file.name.endswith(('.xlsx', '.xls')):
@@ -266,9 +262,9 @@ with tab_upload:
             else:
                 imported_df = pd.read_csv(uploaded_file)
                 
-            st.success(f"Successfully loaded '{uploaded_file.name}' with {len(imported_df)} rows!")
+            st.success(f"Loaded **{uploaded_file.name}** ({len(imported_df)} rows)")
             
-            # Column mapping assistant
+            # Smart column mapping assistant
             cols = list(imported_df.columns)
             def find_match(keys, default_idx=0):
                 for i, c in enumerate(cols):
@@ -279,30 +275,74 @@ with tab_upload:
                 
             m1, m2, m3 = st.columns(3)
             with m1:
-                x_match = st.selectbox("Map Crosslink Decrease Column", cols, index=find_match(["crosslink", "decrease", "1v", "xd", "loss"], 1))
+                x_match = st.selectbox("Map Crosslink Density Decrease Column (X)", cols, index=find_match(["crosslink", "decrease", "1v", "xd", "loss", "density"], 1))
             with m2:
-                s_match = st.selectbox("Map Sol Fraction Column", cols, index=find_match(["sol", "fraction", "soluble", "s"], 2))
+                s_match = st.selectbox("Map Sol Fraction Column (Y)", cols, index=find_match(["sol", "fraction", "soluble", "s"], 2))
             with m3:
-                name_match = st.selectbox("Map Sample Name Column", ["Auto Index"] + cols, index=find_match(["samplename", "sample", "name", "id"], 0) + 1 if "Sample Name" in cols else 0)
+                name_match = st.selectbox("Map Sample Name Column (Optional)", ["Auto Index"] + cols, index=find_match(["samplename", "sample", "name", "id"], 0) + 1 if "Sample Name" in cols else 0)
                 
-            if st.button("🔄 Apply Uploaded Data to Live Editor"):
-                mapped_df = pd.DataFrame()
-                mapped_df["Sample Name"] = imported_df[name_match] if name_match != "Auto Index" else [f"Sample {i+1}" for i in range(len(imported_df))]
-                mapped_df["Crosslink Decrease (1 - v/v0)"] = pd.to_numeric(imported_df[x_match].astype(str).str.replace("%", "").str.strip(), errors='coerce')
-                mapped_df["Sol Fraction (Sf)"] = pd.to_numeric(imported_df[s_match].astype(str).str.replace("%", "").str.strip(), errors='coerce')
-                mapped_df["Notes"] = [f"Imported from {uploaded_file.name}"] * len(imported_df)
-                mapped_df = mapped_df.dropna(subset=["Crosslink Decrease (1 - v/v0)", "Sol Fraction (Sf)"])
-                st.session_state["experimental_data"] = mapped_df
-                st.rerun()
+            mapped_df = pd.DataFrame()
+            mapped_df["Sample Name"] = imported_df[name_match] if name_match != "Auto Index" else [f"Sample {i+1}" for i in range(len(imported_df))]
+            mapped_df["Crosslink Density Decrease (1 - v/v0)"] = pd.to_numeric(imported_df[x_match].astype(str).str.replace("%", "").str.strip(), errors='coerce')
+            mapped_df["Sol Fraction (s)"] = pd.to_numeric(imported_df[s_match].astype(str).str.replace("%", "").str.strip(), errors='coerce')
+            mapped_df["Notes"] = [f"Imported from {uploaded_file.name}"] * len(imported_df)
+            current_active_df = mapped_df.dropna(subset=["Crosslink Density Decrease (1 - v/v0)", "Sol Fraction (s)"])
+            
+            st.dataframe(current_active_df, use_container_width=True)
         except Exception as e:
-            st.error(f"Error parsing file: {e}")
+            st.error(f"Error parsing uploaded file: {e}")
+            current_active_df = st.session_state["manual_data"]
+    else:
+        st.info("ℹ️ No file uploaded yet. Showing default sample dataset below. Upload an Excel/CSV file above or switch to Option 2 for manual entry.")
+        current_active_df = st.session_state["manual_data"]
+
+else:  # Option 2: Manual Data Entry
+    st.markdown(
+        "Directly **add**, **edit**, or **delete** experimental rows in the interactive table below. "
+        "The Horikx plot, curve distances, and automated insights will update dynamically."
+    )
+    
+    edited_df = st.data_editor(
+        st.session_state["manual_data"],
+        num_rows="dynamic",
+        use_container_width=True,
+        column_config={
+            "Sample Name": st.column_config.TextColumn(
+                "Sample Name",
+                default="Sample",
+                required=True,
+                help="Name / ID of the vulcanizate or devulcanized sample"
+            ),
+            "Crosslink Density Decrease (1 - v/v0)": st.column_config.NumberColumn(
+                "Crosslink Density Decrease (1 - v/v0)",
+                min_value=0.0,
+                max_value=1.0 if "Fraction" in unit_format else 100.0,
+                step=0.01 if "Fraction" in unit_format else 1.0,
+                format="%.4f" if "Fraction" in unit_format else "%.1f%%",
+                required=True,
+                help="Relative reduction in crosslink density: 1 - (nu_f / nu_i)"
+            ),
+            "Sol Fraction (s)": st.column_config.NumberColumn(
+                "Sol Fraction (s)",
+                min_value=0.0,
+                max_value=1.0 if "Fraction" in unit_format else 100.0,
+                step=0.01 if "Fraction" in unit_format else 1.0,
+                format="%.4f" if "Fraction" in unit_format else "%.1f%%",
+                required=True,
+                help="Soluble polymer fraction (S_f)"
+            ),
+            "Notes": st.column_config.TextColumn("Notes / Conditions (Optional)")
+        },
+        key="manual_table_editor"
+    )
+    st.session_state["manual_data"] = edited_df
+    current_active_df = edited_df
 
 # ---------------------------------------------------------
 # 5. Process & Calculate Analysis
 # ---------------------------------------------------------
-current_data = st.session_state["experimental_data"]
 scale = 100.0 if "Percentage" in unit_format else 1.0
-evaluated_df = evaluate_data_points(current_data, s0, scale_factor=scale)
+evaluated_df = evaluate_data_points(current_active_df, s0, scale_factor=scale)
 
 # ---------------------------------------------------------
 # 6. Matplotlib Horikx Diagram
@@ -348,7 +388,7 @@ ax.axhline(s0, color='#6366F1', linestyle=':', linewidth=1.2, alpha=0.7, label=f
 if not evaluated_df.empty:
     ax.scatter(
         evaluated_df["1 - v/v0"],
-        evaluated_df["Sol Fraction (Sf)"],
+        evaluated_df["Sol Fraction (s)"],
         color=point_color,
         s=point_size,
         edgecolors='black',
@@ -361,7 +401,7 @@ if not evaluated_df.empty:
     for _, row in evaluated_df.iterrows():
         ax.annotate(
             str(row["Sample Name"]),
-            (row["1 - v/v0"], row["Sol Fraction (Sf)"]),
+            (row["1 - v/v0"], row["Sol Fraction (s)"]),
             xytext=(6, 5),
             textcoords="offset points",
             fontsize=8.5,
@@ -424,7 +464,7 @@ if not evaluated_df.empty:
     display_table = pd.DataFrame({
         "Sample Name": evaluated_df["Sample Name"],
         "1 - ν/ν₀": evaluated_df["1 - v/v0"].apply(lambda v: f"{v:.4f}" if "Fraction" in unit_format else f"{v*100:.1f}%"),
-        "Sol Fraction (S_f)": evaluated_df["Sol Fraction (Sf)"].apply(lambda v: f"{v:.4f}" if "Fraction" in unit_format else f"{v*100:.1f}%"),
+        "Sol Fraction (s)": evaluated_df["Sol Fraction (s)"].apply(lambda v: f"{v:.4f}" if "Fraction" in unit_format else f"{v*100:.1f}%"),
         "Distance to CL Curve (Δx)": evaluated_df["Dist to Crosslink"].apply(lambda v: f"{v:.4f}"),
         "Distance to MC Curve (Δx)": evaluated_df["Dist to Main-Chain"].apply(lambda v: f"{v:.4f}"),
         "Crosslink Scission Ratio": evaluated_df["Crosslink Scission (%)"].apply(lambda v: f"{v:.1f}%"),
@@ -441,12 +481,11 @@ if not evaluated_df.empty:
     with st.container():
         st.info(
             f"🎯 **Most Ideal Devulcanization Trial:** **{best_row['Sample Name']}** demonstrated the highest selectivity index (**{best_row['Crosslink Scission (%)']:.1f}%** crosslink scission vs **{best_row['Chain Scission (%)']:.1f}%** main-chain scission). "
-            f"It achieved a **{best_row['1 - v/v0']*100:.1f}%** reduction in crosslink density while maintaining sol fraction at **{best_row['Sol Fraction (Sf)']*100:.1f}%**, minimizing molecular weight loss of the rubber matrix."
+            f"It achieved a **{best_row['1 - v/v0']*100:.1f}%** reduction in crosslink density while maintaining sol fraction at **{best_row['Sol Fraction (s)']*100:.1f}%**, minimizing molecular weight loss of the rubber matrix."
         )
 
         st.markdown("**Key Takeaways from Horikx Trajectory:**")
         
-        # Dynamic Bullet Points Generation
         insights_bullets = []
         
         # Check high selectivity points
