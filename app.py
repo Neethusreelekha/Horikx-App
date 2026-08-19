@@ -675,14 +675,10 @@ with exp_col1:
                 
         ax.set_xlim(0.0, 1.0)
         ax.set_ylim(0.0, 1.0)
-        ax.set_xlabel(r"Relative Decrease in Crosslink Density $left(1 - rac{
-u_f}{
-u_i}
-ight)$", fontsize=11, fontweight='semibold')
-        ax.set_ylabel(r"Sol Fraction $left(S_f
-ight)$", fontsize=11, fontweight='semibold')
-        ax.set_title("Horikx Plot Analysis for Rubber Devulcanization", fontsize=13, fontweight='bold', pad=14)
-        ax.grid(True, linestyle=':', alpha=0.5, color='gray')
+        ax.set_xlabel(r"Relative Decrease in Crosslink Density $\left(1 - \frac{\nu_f}{\nu_i}\right)$", fontsize=11, fontweight="semibold")
+        ax.set_ylabel(r"Sol Fraction ($S_f$)", fontsize=11, fontweight="semibold")
+        ax.set_title("Horikx Plot Analysis for Rubber Devulcanization", fontsize=13, fontweight="bold", pad=14)
+        ax.grid(True, linestyle=":", alpha=0.5, color="gray")
         
         # Move legend strictly to bottom-center with multi-column alignment
         ax.legend(
