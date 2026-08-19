@@ -2,7 +2,7 @@
 Horikx Plot Analysis for Rubber Devulcanization
 A fully standalone, interactive Streamlit web application with:
   - Interactive Plotly Graph Integration with native legend toggling (st.plotly_chart)
-  - Fixed PNG Export Functions (Zero truncation with bbox_inches='tight', pad_inches=0.3, dpi=300, width=1000, height=600, scale=2)
+  - Fixed PNG Export Functions (Zero truncation with bbox_inches='tight', pad_inches=0.3, dpi=300, width=1200, height=800, scale=2)
   - Interactive Sidebar Controls to declutter multi-S0 and multi-trial plots:
       * Multiselect to toggle active S0 theoretical curves
       * Independent checkboxes for Main-Chain and Crosslink scission curves
@@ -14,6 +14,7 @@ A fully standalone, interactive Streamlit web application with:
   - Dynamic Curve Rendering & Multi-Trial Plotting for Multiple Unique S_0 Values
   - Individual Distance Calculation in Automated Mechanism Analysis using each Sample's S_0
   - High-resolution publication exports and automated insights
+  - 'Save & Download Later' Session Stash with Batch ZIP Export
 
 Requirements:
     pip install streamlit pandas numpy plotly matplotlib openpyxl kaleido
@@ -28,6 +29,9 @@ import numpy as np
 import plotly.graph_objects as go
 import matplotlib.pyplot as plt
 import io
+import zipfile
+import datetime
+import json
 
 # ---------------------------------------------------------
 # 1. Page Configuration & Header
@@ -43,7 +47,7 @@ st.title("🧪 Horikx Plot Analysis for Rubber Devulcanization")
 st.markdown(
     """
     Evaluate devulcanization efficiency by comparing experimental sol fraction ($S_f$ or $s$) 
-    and crosslink density decrease ($1 - \nu_f/\nu_i$) against theoretical **Horikx (1956)** scission curves.
+    and crosslink density decrease ($1 - \\nu_f/\\nu_i$) against theoretical **Horikx (1956)** scission curves.
     **Features interactive Plotly rendering with multi-S₀ curves, per-sample baseline analysis, and truncation-free high-res PNG export.**
     """
 )
@@ -421,7 +425,7 @@ else:
 # 6. Interactive Plotly Graph Integration (with Legend Toggling & Margin Padding)
 # ---------------------------------------------------------
 st.subheader("📊 Interactive Horikx Diagram (Plotly Engine)")
-st.caption("💡 **Tip:** Click any curve or sample in the plot legend on the right to instantly hide/show it dynamically!")
+st.caption("💡 **Tip:** Click any curve or sample in the plot legend below to instantly hide/show it dynamically!")
 
 fig = go.Figure()
 
@@ -850,3 +854,107 @@ if not evaluated_df.empty:
 
 else:
     st.warning("No valid experimental points found in the table. Please add at least one row in the editor above.")
+
+# ---------------------------------------------------------
+# 8. 'Save & Download Later' Stash Feature (Session State & ZIP Export)
+# ---------------------------------------------------------
+st.markdown("---")
+st.subheader("🗄️ Save & Download Later (Session Stash & Batch ZIP Export)")
+
+if "stashed_runs" not in st.session_state:
+    st.session_state["stashed_runs"] = []
+
+stash_c1, stash_c2, stash_c3 = st.columns([2, 1, 1])
+
+with stash_c1:
+    stash_label = st.text_input(
+        "Analysis Snapshot Label",
+        value=f"Horikx Analysis {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        help="Custom label or batch ID to identify this saved analysis snapshot"
+    )
+
+with stash_c2:
+    st.write("")
+    st.write("")
+    if st.button("💾 Stash Current Analysis", use_container_width=True, type="primary"):
+        if not evaluated_df.empty:
+            # Generate PNG buffer for stashed run
+            buf = io.BytesIO()
+            fig_mpl = create_matplotlib_publication_figure()
+            fig_mpl.savefig(buf, format="png", dpi=300, bbox_inches="tight", pad_inches=0.3)
+            buf.seek(0)
+            png_bytes = buf.getvalue()
+            plt.close(fig_mpl)
+            
+            # CSV string
+            csv_str = evaluated_df.to_csv(index=False)
+            
+            st.session_state["stashed_runs"].append({
+                "id": len(st.session_state["stashed_runs"]) + 1,
+                "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "label": stash_label,
+                "sample_count": len(evaluated_df),
+                "avg_selectivity": float(evaluated_df["Crosslink Scission (%)"].mean()),
+                "png_bytes": png_bytes,
+                "csv_str": csv_str,
+                "summary_text": f"Label: {stash_label}\nTimestamp: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\nSamples: {len(evaluated_df)}\nAvg Selectivity: {evaluated_df['Crosslink Scission (%)'].mean():.2f}%\n"
+            })
+            st.success(f"✅ Stashed '{stash_label}' successfully! ({len(st.session_state['stashed_runs'])} snapshots in session)")
+        else:
+            st.warning("No data points available to stash.")
+
+with stash_c3:
+    st.write("")
+    st.write("")
+    if st.button("🗑️ Clear Stash", use_container_width=True):
+        st.session_state["stashed_runs"] = []
+        st.info("Cleared all stashed snapshots.")
+
+if st.session_state["stashed_runs"]:
+    st.markdown(f"**Current Session Stash ({len(st.session_state['stashed_runs'])} snapshots saved):**")
+    
+    stash_summary = pd.DataFrame([
+        {
+            "ID": item["id"],
+            "Label": item["label"],
+            "Timestamp": item["timestamp"],
+            "Sample Count": item["sample_count"],
+            "Avg Selectivity (%)": f"{item['avg_selectivity']:.1f}%"
+        }
+        for item in st.session_state["stashed_runs"]
+    ])
+    st.dataframe(stash_summary, use_container_width=True)
+    
+    # Create In-Memory ZIP File
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+        # Write index manifest
+        manifest_lines = ["Horikx Multi-Trial Devulcanization Analysis - Stashed Run Manifest", "="*70]
+        for item in st.session_state["stashed_runs"]:
+            prefix = f"run_{item['id']}_{item['timestamp'].replace(' ', '_').replace(':', '-')}"
+            manifest_lines.append(f"Snapshot #{item['id']}: {item['label']}")
+            manifest_lines.append(f"  Timestamp: {item['timestamp']}")
+            manifest_lines.append(f"  Samples: {item['sample_count']}")
+            manifest_lines.append(f"  Average Crosslink Selectivity: {item['avg_selectivity']:.2f}%")
+            manifest_lines.append("-" * 50)
+            
+            # Add PNG image
+            zip_file.writestr(f"{prefix}/horikx_plot_300dpi.png", item["png_bytes"])
+            # Add CSV data
+            zip_file.writestr(f"{prefix}/evaluated_data.csv", item["csv_str"])
+            # Add text summary
+            zip_file.writestr(f"{prefix}/analysis_summary.txt", item["summary_text"])
+            
+        zip_file.writestr("manifest.txt", "\n".join(manifest_lines))
+        
+    zip_buffer.seek(0)
+    
+    st.download_button(
+        label=f"📦 Download All Stashed Analyses as ZIP ({len(st.session_state['stashed_runs'])} runs)",
+        data=zip_buffer.getvalue(),
+        file_name=f"horikx_stashed_analyses_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
+        mime="application/zip",
+        help="Downloads a comprehensive ZIP bundle containing high-res 300 DPI plots, evaluated CSV datasets, and summary manifests for all stashed session runs."
+    )
+else:
+    st.caption("No analysis snapshots stashed in this browser session yet. Click 'Stash Current Analysis' above to queue snapshots and download them all together in a ZIP package.")
